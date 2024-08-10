@@ -1,0 +1,107 @@
+---
+- name: Secure Ubuntu VPS Setup
+  hosts: all
+  become: yes
+  vars:
+    ssh_port: 2222
+    username: secureuser
+    public_key: ~/.ssh/id_ed25519.pub
+
+  tasks:
+    - name: Update and upgrade all packages
+      apt:
+        update_cache: yes
+        upgrade: dist
+
+    - name: Install essential packages
+      apt:
+        name:
+          - ufw
+          - fail2ban
+          - unattended-upgrades
+        state: present
+
+    - name: Configure unattended-upgrades
+      copy:
+        content: |
+          Unattended-Upgrade::Allowed-Origins {
+              "${distro_id}:${distro_codename}";
+              "${distro_id}:${distro_codename}-security";
+              "${distro_id}ESMApps:${distro_codename}-apps-security";
+              "${distro_id}ESM:${distro_codename}-infra-security";
+          };
+
+          Unattended-Upgrade::Package-Blacklist {
+          };
+
+          Unattended-Upgrade::AutoFixInterruptedDpkg "true";
+          Unattended-Upgrade::MinimalSteps "true";
+          Unattended-Upgrade::InstallOnShutdown "false";
+          Unattended-Upgrade::Remove-Unused-Dependencies "true";
+          Unattended-Upgrade::Automatic-Reboot "false";
+        dest: /etc/apt/apt.conf.d/50unattended-upgrades
+
+    - name: Set up UFW
+      ufw:
+        rule: allow
+        port: '{{ item }}'
+      loop:
+        - '{{ ssh_port }}'
+        - '80'
+        - '443'
+
+    - name: Enable UFW
+      ufw:
+        state: enabled
+
+    - name: Configure fail2ban
+      copy:
+        content: |
+          [sshd]
+          enabled = true
+          port = {{ ssh_port }}
+          filter = sshd
+          logpath = /var/log/auth.log
+          maxretry = 3
+          bantime = 3600
+        dest: /etc/fail2ban/jail.local
+
+    - name: Restart fail2ban
+      service:
+        name: fail2ban
+        state: restarted
+
+    - name: Create non-root user
+      user:
+        name: '{{ username }}'
+        groups: sudo
+        shell: /bin/bash
+        create_home: yes
+
+    - name: Set up SSH key for new user
+      authorized_key:
+        user: '{{ username }}'
+        key: "{{ lookup('file', public_key) }}"
+
+    - name: Configure SSH
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '{{ item.regexp }}'
+        line: '{{ item.line }}'
+      loop:
+        - { regexp: '^#?Port', line: 'Port {{ ssh_port }}' }
+        - { regexp: '^#?PermitRootLogin', line: 'PermitRootLogin no' }
+        - {
+            regexp: '^#?PasswordAuthentication',
+            line: 'PasswordAuthentication no',
+          }
+        - { regexp: '^#?X11Forwarding', line: 'X11Forwarding no' }
+        - { regexp: '^#?AllowTcpForwarding', line: 'AllowTcpForwarding no' }
+        - { regexp: '^#?AllowAgentForwarding', line: 'AllowAgentForwarding no' }
+      notify: Restart SSH
+
+  handlers:
+    - name: Restart SSH
+      service:
+        name: ssh
+        state: restarted
