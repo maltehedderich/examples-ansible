@@ -1,7 +1,7 @@
 ---
 - name: Secure Ubuntu VPS Setup
   hosts: all
-  become: yes
+  become: true
   vars:
     ssh_port: 2222
     username: secureuser
@@ -9,12 +9,12 @@
 
   tasks:
     - name: Update and upgrade all packages
-      apt:
-        update_cache: yes
+      ansible.builtin.apt:
+        update_cache: true
         upgrade: dist
 
     - name: Install essential packages
-      apt:
+      ansible.builtin.apt:
         name:
           - ufw
           - fail2ban
@@ -22,7 +22,7 @@
         state: present
 
     - name: Configure unattended-upgrades
-      copy:
+      ansible.builtin.copy:
         content: |
           Unattended-Upgrade::Allowed-Origins {
               "${distro_id}:${distro_codename}";
@@ -40,6 +40,7 @@
           Unattended-Upgrade::Remove-Unused-Dependencies "true";
           Unattended-Upgrade::Automatic-Reboot "false";
         dest: /etc/apt/apt.conf.d/50unattended-upgrades
+        mode: '0644'
 
     - name: Set up UFW
       ufw:
@@ -55,7 +56,7 @@
         state: enabled
 
     - name: Configure fail2ban
-      copy:
+      ansible.builtin.copy:
         content: |
           [sshd]
           enabled = true
@@ -65,9 +66,10 @@
           maxretry = 3
           bantime = 3600
         dest: /etc/fail2ban/jail.local
+        mode: '0644'
 
     - name: Restart fail2ban
-      service:
+      ansible.builtin.service:
         name: fail2ban
         state: restarted
 
@@ -84,17 +86,14 @@
         key: "{{ lookup('file', public_key) }}"
 
     - name: Configure SSH
-      lineinfile:
+      ansible.builtin.lineinfile:
         path: /etc/ssh/sshd_config
         regexp: '{{ item.regexp }}'
         line: '{{ item.line }}'
       loop:
         - { regexp: '^#?Port', line: 'Port {{ ssh_port }}' }
         - { regexp: '^#?PermitRootLogin', line: 'PermitRootLogin no' }
-        - {
-            regexp: '^#?PasswordAuthentication',
-            line: 'PasswordAuthentication no',
-          }
+        - { regexp: '^#?PasswordAuthentication', line: 'PasswordAuthentication no' }
         - { regexp: '^#?X11Forwarding', line: 'X11Forwarding no' }
         - { regexp: '^#?AllowTcpForwarding', line: 'AllowTcpForwarding no' }
         - { regexp: '^#?AllowAgentForwarding', line: 'AllowAgentForwarding no' }
@@ -102,6 +101,6 @@
 
   handlers:
     - name: Restart SSH
-      service:
+      ansible.builtin.service:
         name: ssh
         state: restarted
