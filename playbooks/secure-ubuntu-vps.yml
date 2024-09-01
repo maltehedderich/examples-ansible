@@ -74,14 +74,14 @@
         state: restarted
 
     - name: Create non-root user
-      user:
+      ansible.builtin.user:
         name: '{{ username }}'
         groups: sudo
         shell: /bin/bash
-        create_home: yes
+        create_home: true
 
     - name: Set up SSH key for new user
-      authorized_key:
+      ansible.posix.authorized_key:
         user: '{{ username }}'
         key: "{{ lookup('file', public_key) }}"
 
